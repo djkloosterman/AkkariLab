@@ -1,4 +1,4 @@
-# Macrophage mediated myelin-turnover fuels malignancy of glioblastoma, Kloosterman and Erbani et al. 
+# Macrophage mediated myelin-turnover fuels glioblastoma malignancy, Kloosterman and Erbani et al. 
 
 ![KloostermanErbani](https://user-images.githubusercontent.com/50464178/154963523-172c033d-b26c-43b5-8454-c62cdfd4d579.png)
 
