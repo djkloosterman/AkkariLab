@@ -1,3 +1,260 @@
 # Pre-processing scRNA-seq data
 
 This module contains the code used to integrate and filter the data for further downstream processing.
+
+---
+title: "1. Integrate Data"
+author: "Daan Kloosterman"
+date: "7/15/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Loading packages/libraries
+
+```{r}
+library(heatmap3)
+library(leiden)
+library(igraph)
+library(magrittr)
+library(dplyr)
+library(Seurat)
+library(patchwork)
+library(ggplot2)
+library(cowplot)
+library(reticulate)
+library(RNeXML)
+library(uuid)
+library(ade4)
+library(rncl)
+library(Polychrome)
+library(ggbeeswarm)
+library(gam)
+require(clusterExperiment)
+library(phylobase)
+library(RColorBrewer)
+```
+
+## Loading all the raw data files from genomics facility
+
+```{r}
+load("~/Desktop/YEAR2_Folder/5. Omics Analysis/1. 10x - GBM Mouse Model/1. CD45-:CD45+/Data_20200831/combineddataset_6106.Rdata") # First CD45-/45+ batch
+CD45_1 <- combined
+rm(combined)
+load("~/Desktop/YEAR2_Folder/5. Omics Analysis/1. 10x - GBM Mouse Model/1. CD45-:CD45+/Data_20201117/Combined_GEX_VDJ.Rda") # Second CD45-/CD45+ batch
+CD45_2 <- comb
+rm(comb)
+load("~/Desktop/YEAR2_Folder/5. Omics Analysis/1. 10x - GBM Mouse Model/1. CD45-:CD45+/Data_20210607/GEX_VDJ_6407_6410_Merged.Rda") # First CD45-/45+ batch
+CD45_3 <- merged
+rm(merged)
+load("~/Desktop/YEAR2_Folder/5. Omics Analysis/1. 10x - GBM Mouse Model/2. MG:BMDMs/Data/ink4a_mg-bmdms.Rdata") # MG/BMDM datasets
+mg_bmdm_1 <- combined
+rm(combined)
+load("~/Desktop/YEAR2_Folder/5. Omics Analysis/1. 10x - GBM Mouse Model/2. MG:BMDMs/Data/p53_mg-bmdms.Rda") # MG/BMDM datasets
+mg_bmdm_2 <- alldata
+rm(alldata)
+```
+
+## Data preperation for integration
+
+```{r}
+## CD45_1
+CD45_1 <- subset(x = CD45_1, subset = nFeature_RNA > 1000)
+CD45_1 <- NormalizeData(CD45_1, verbose = FALSE)
+CD45_1 <- FindVariableFeatures(CD45_1, selection.method = "vst", 
+        nfeatures = 2000, verbose = FALSE)
+CD45_1 <- ScaleData(CD45_1)
+VlnPlot(CD45_1, features = "nFeature_RNA")
+CD45_1@meta.data$tech <- "CD45_1"
+
+
+## CD45_2
+CD45_2 <- subset(x = CD45_2, subset = nFeature_RNA > 1000)
+CD45_2 <- NormalizeData(CD45_2, verbose = FALSE)
+CD45_2 <- FindVariableFeatures(CD45_2, selection.method = "vst", 
+        nfeatures = 2000, verbose = FALSE)
+CD45_2 <- ScaleData(CD45_2)
+VlnPlot(CD45_2, features =  "nFeature_RNA")
+CD45_2@meta.data$tech <- "CD45_2"
+
+## CD45_3
+CD45_3 <- subset(x = CD45_3, subset = nFeature_RNA > 1000)
+CD45_3 <- NormalizeData(CD45_3, verbose = FALSE)
+CD45_3 <- FindVariableFeatures(CD45_3, selection.method = "vst", 
+        nfeatures = 2000, verbose = FALSE)
+CD45_3 <- ScaleData(CD45_3)
+VlnPlot(CD45_3, features =  "nFeature_RNA")
+CD45_3@meta.data$tech <- "CD45_3"
+
+## mg_bmdm_1
+mg_bmdm_1 <- subset(x = mg_bmdm_1, subset = nFeature_RNA > 1000)
+mg_bmdm_1 <- NormalizeData(mg_bmdm_1, verbose = FALSE)
+mg_bmdm_1 <- FindVariableFeatures(mg_bmdm_1, selection.method = "vst", 
+        nfeatures = 2000, verbose = FALSE)
+mg_bmdm_1 <- ScaleData(mg_bmdm_1)
+VlnPlot(mg_bmdm_1, features =  "nFeature_RNA")
+mg_bmdm_1@meta.data$tech <- "mg_bmdm_1"
+
+## mg_bmdm_2
+mg_bmdm_2 <- subset(x = mg_bmdm_2, subset = nFeature_RNA > 1000)
+mg_bmdm_2 <- NormalizeData(mg_bmdm_2, verbose = FALSE)
+mg_bmdm_2 <- FindVariableFeatures(mg_bmdm_2, selection.method = "vst", 
+        nfeatures = 2000, verbose = FALSE)
+mg_bmdm_2 <- ScaleData(mg_bmdm_2)
+VlnPlot(mg_bmdm_2, features =  "nFeature_RNA")
+mg_bmdm_2@meta.data$tech <- "mg_bmdm_2"
+```
+## Data Integration
+
+```{r}
+gbm.list <- c(CD45_1, CD45_2, CD45_3, mg_bmdm_1, mg_bmdm_2)
+names(gbm.list) <- c("CD45_1", "CD45_2", "CD45_3", "mg_bmdm_1", "mg_bmdm_2")
+
+
+rm(CD45_1, CD45_2, CD45_3, mg_bmdm_1, mg_bmdm_2)
+
+features <- SelectIntegrationFeatures(object.list = gbm.list, nfeatures = 3000)
+reference_dataset <- which(names(gbm.list) == "CD45_3")
+gbm.anchors <- FindIntegrationAnchors(object.list = gbm.list,
+    anchor.features = features, reference = reference_dataset)
+
+rm(gbm.list)
+rm(reference_dataset)
+
+gbm.combined <- IntegrateData(anchorset = gbm.anchors)
+
+rm(gbm.anchors)
+
+# clean data first
+# scRNA-seq QC metric.
+mito.genes <- grep(pattern = "Scara", x = rownames(gbm.myeloid@assays[["RNA"]]), value = TRUE)
+
+percent.mito <- Matrix::colSums(gbm.combined@assays[["RNA"]][mito.genes, ])/Matrix::colSums(gbm.combined@assays[["RNA"]])
+
+# AddMetaData adds columns to object@meta.data, and is a great place to
+# stash QC stats
+
+#Seurat v2 function, but shows compatibility in Seurat v3
+gbm.combined <- AddMetaData(object = gbm.combined, metadata = percent.mito, col.name = "percent.mito") 
+#in case the above function does not work simply do:
+gbm.combined$percent.mito <- percent.mito
+Idents(gbm.combined) <- gbm.combined$orig.ident
+VlnPlot(object = gbm.combined, features = c("nFeature_RNA", "nCount_RNA", "percent.mito"), ncol = 3)
+FeatureScatter(object = gbm.combined, feature1 = "nCount_RNA", feature2 = "percent.mito")
+FeatureScatter(object = gbm.combined, feature1 = "nCount_RNA", feature2 = "nFeature_RNA")
+
+
+## Design subset based on cutt offs
+gbm.combined <- subset(x = gbm.combined, subset = nFeature_RNA > 1000 & nFeature_RNA < 5500 & percent.mito >  -Inf & percent.mito < 0.2 & nCount_RNA < 30000 )
+
+table(gbm.combined$orig.ident)
+
+# specify that we will perform downstream analysis on the corrected data note that the
+# original unmodified data still resides in the 'RNA' assay
+DefaultAssay(gbm.combined) <- "integrated"
+
+# Run the standard workflow for visualization and clustering
+gbm.combined <- ScaleData(gbm.combined, verbose = FALSE)
+gbm.combined <- RunPCA(gbm.combined, npcs = 30, verbose = FALSE)
+```
+
+## Seurat clustering/UMAP
+
+```{r}
+gbm.combined <- FindClusters(gbm.combined, resolution = 0.3, algorithm = 4)
+gbm.combined <- RunUMAP(gbm.combined, reduction = "pca", dims = 1:30)
+gbm.combined <- FindNeighbors(gbm.combined, reduction = "pca", dims = 1:30)
+
+p1 <- DimPlot(gbm.combined, reduction = "umap", group.by = "seurat_clusters")
+p2 <- DimPlot(gbm.combined, reduction = "umap", group.by = "orig.ident", label = TRUE,
+    repel = TRUE)
+p1 + p2
+```
+
+## Adding Annotations
+
+```{r}
+gbm.combined$samplename <- plyr::mapvalues(
+    x = gbm.combined$orig.ident,  
+    from = c("A", "B", "C", "D", "X5765_1_BMDM_P", "X5765_2_MG_P", "X5879_1_BMDM_RC", "X5879_2_MG_RC", "X5879_3_MG_NTB", "S6017", "S6018", "S6035", "6160", "6060", "6190", "6198_1", "6198_2", "6407", "6410_S1", "6410_S2"), 
+    to = c("p53_primary_MG", "p53_primary_BMDM", "p53_recurrent_MG", "p53_recurrent_BMDM", "ink4a_primary_BMDM", "ink4a_primary_MG", "ink4a_recurrent_BMDM", "ink4a_recurrent_MG", "ink4a_ntb_MG", "ink4a_recurrent_CD45_a", "ink4a_primary_CD45_a", "ink4a_primary_CD45_b", "ink4a_primary_CD45_c", "p53_primary_CD45_a", "p53_recurrent_CD45", "ink4a_recurrent_CD45_b", "ink4a_recurrent_CD45_c", "p53_primary_CD45_b", "p53_primary_CD45_c", "p53_primary_CD45_d")
+) 
+
+
+gbm.combined$stage_model <- plyr::mapvalues(
+    x = gbm.combined$orig.ident, 
+    from = c("A", "B", "C", "D", "X5765_1_BMDM_P", "X5765_2_MG_P", "X5879_1_BMDM_RC", "X5879_2_MG_RC", "X5879_3_MG_NTB", "S6017", "S6018", "S6035", "6160", "6060", "6190", "6198_1", "6198_2", "6407", "6410_S1", "6410_S2"), 
+    to = c("p53_primary", "p53_primary", "p53_recurrent", "p53_recurrent", "ink4a_primary", "ink4a_primary", "ink4a_recurrent", "ink4a_recurrent", "ink4a_ntb", "ink4a_recurrent", "ink4a_primary", "ink4a_primary", "ink4a_primary", "p53_primary", "p53_recurrent", "ink4a_recurrent", "ink4a_recurrent", "p53_primary", "p53_primary", "p53_primary")
+) 
+
+gbm.combined$stage <- plyr::mapvalues(
+    x = gbm.combined$orig.ident, 
+    from = c("A", "B", "C", "D", "X5765_1_BMDM_P", "X5765_2_MG_P", "X5879_1_BMDM_RC", "X5879_2_MG_RC", "X5879_3_MG_NTB", "S6017", "S6018", "S6035", "6160", "6060", "6190", "6198_1", "6198_2", "6407", "6410_S1", "6410_S2"), 
+    to = c("primary", "primary", "recurrent", "recurrent", "primary", "primary", "recurrent", "recurrent", "ntb", "recurrent", "primary", "primary", "primary", "primary", "recurrent", "recurrent", "recurrent", "primary", "primary", "primary")
+) 
+
+gbm.combined$model <- plyr::mapvalues(
+    x = gbm.combined$orig.ident, 
+    from = c("A", "B", "C", "D", "X5765_1_BMDM_P", "X5765_2_MG_P", "X5879_1_BMDM_RC", "X5879_2_MG_RC", "X5879_3_MG_NTB", "S6017", "S6018", "S6035", "6160", "6060", "6190", "6198_1", "6198_2", "6407", "6410_S1", "6410_S2"), 
+    to = c("p53", "p53", "p53", "p53", "ink4a", "ink4a", "ink4a", "ink4a", "ink4a", "ink4a", "ink4a", "ink4a", "ink4a", "p53", "p53", "ink4a", "ink4a", "p53", "p53", "p53")
+) 
+p3 <- DimPlot(gbm.combined, reduction = "umap",  group.by = "stage_model", label = TRUE)
+p4 <- DimPlot(gbm.combined, reduction = "umap",  group.by = "stage", label = TRUE)
+p5 <- DimPlot(gbm.combined, reduction = "umap",  group.by = "model", label = TRUE)
+
+p3 + p4 + p5
+```
+
+## Annotating celltype
+
+```{r}
+DefaultAssay(gbm.combined) <- "RNA"
+DimPlot(gbm.combined, reduction = "umap",  group.by = "seurat_clusters", label = TRUE)
+FeaturePlot(gbm.combined, features = c("Spi1", "P2ry12", "Ccr7", "Ifitm1", "Arg1", "Fabp5", "Cd36", "Gpnmb", "Hmox1"))
+DotPlot(gbm.combined, group.by = "seurat_clusters", features = c("P2ry12", "Ccr7", "Ifitm1", "Arg1", "Fabp5", "Olig1" ,"Cd36", "Gfap", "Gpnmb", "Hmox1", "Ly6c1", "Ly6c2", "Tnf", "Mki67", "Cd3e", "Pglyrp1", "Hbb-bs"))
+
+## Give new ID
+Idents(gbm.combined) <- gbm.combined$seurat_clusters
+new.cluster.ids <- c("BMDMs",	"Microglia",	"Tumor cells",	"Tumor cells",	"BMDMs", "BMDMs",	"T-cells",	"Microglia",	"BMDMs",	"Microglia",	"Tumor cells",	"Astrocytes",	"Monocytes",  "Tumor cells", "Endothelial cells","Monocytes")
+names(new.cluster.ids) <- levels(gbm.combined)
+gbm.combined <- RenameIdents(gbm.combined, new.cluster.ids)
+gbm.combined$clusterf <- Idents(gbm.combined)
+my_levels <-  c(	"Microglia",	"BMDMs", "Monocytes", "Neutrophils", "T-cells",	"Endothelial cells", "Astrocytes","Tumor cells")
+
+# Relevel object@ident
+Idents(gbm.combined) <- factor(Idents(gbm.combined), levels = my_levels)
+gbm.combined$clusterf <- Idents(gbm.combined)
+DimPlot(gbm.combined, reduction = "umap",  group.by = "clusterf", label = TRUE)
+```
+
+
+## Split dataset
+
+```{r}
+gbm.myeloid <- gbm.combined[, gbm.combined$clusterf %in% c("Microglia", "BMDMs", "Monocytes")]
+gbm.lymphoid  <- gbm.combined[, gbm.combined$clusterf %in% c("T-cells")]
+gbm.tumor  <- gbm.combined[, gbm.combined$clusterf %in% c("Tumor cells")]
+gbm.CD45.negative  <- gbm.combined[, gbm.combined$clusterf %in% c("Tumor cells",  "Endothelial cells", "Astrocytes")]
+gbm.endothelial  <- gbm.combined[, gbm.combined$clusterf %in% c("Endothelial cells")]
+```
+
+
+## Saving Data
+
+```{r}
+x_abundance <- t(table(gbm.combined$clusterf, gbm.combined$samplename))
+write.csv(x_abundance, file = "~/Desktop/x_gbm-complete.csv")
+
+save(gbm.combined,file="~/Desktop/gbm-complete.Rda")
+save(gbm.myeloid,file="~/Desktop/gbm-complete-myeloid.Rda")
+save(gbm.lymphoid,file="~/Desktop/gbm-complete-lymphoid.Rda")
+save(gbm.tumor,file="~/Desktop/gbm-complete-tumor.Rda")
+save(gbm.CD45.negative,file="~/Desktop/gbm-complete-CD45neg.Rda")
+save(gbm.endothelial,file="~/Desktop/gbm-complete-endothelial.Rda")
+
+```
