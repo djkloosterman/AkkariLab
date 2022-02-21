@@ -24,7 +24,7 @@ library(Seurat)
 # Loading all the raw data files from genomics facility
 
 ```{r}
-setwd("~/surfdrive/YEAR2_Folder/5. Omics Analysis/1. 10x - GBM Mouse Model/4. Final Data Analysis/0.1 Raw data") # Set working directory to folder where downloaded data is located
+setwd("...") # Set working directory to folder where downloaded data is located
 
 load("combineddataset_6106.Rdata") # First CD45-/45+ batch
 CD45_1 <- combined
@@ -216,7 +216,7 @@ gbm.tumor  <- gbm.combined[, gbm.combined$celltype %in% c("Tumor cells")]
 ## Saving Data
 
 ```{r}
-setwd("~/surfdrive/YEAR2_Folder/5. Omics Analysis/1. 10x - GBM Mouse Model/4. Final Data Analysis/0.1 Raw data") # Set working directory to folder where integrated and filtered data will be saved
+setwd("...") # Set working directory to folder where integrated and filtered data will be saved
 
 save(gbm.combined,file="gbm-complete.Rda")
 save(gbm.myeloid,file="gbm-complete-myeloid.Rda")
