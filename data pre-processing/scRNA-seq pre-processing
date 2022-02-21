@@ -1,0 +1,3 @@
+# Pre-processing scRNA-seq data
+
+This module contains the code used to integrate and filter the data for further downstream processing.
