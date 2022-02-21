@@ -4,7 +4,7 @@
 
 This repository contains the basic scripts to generate the data published in Kloosterman and Erbani et al. (link soon) in a R environment.
 
-The folder 'data' contains the complete Visium data and single cell dataset after integration and filtering of the count matrixes, as respectively described in the 'Visium data pre-processing' and 'scRNA-seq data pre-processing' codes. These datasets are called upon in all following codes. 
+The folder 'data' contains information on how to download the raw and processed Visium data and single cell dataset, as described in the 'Visium data pre-processing' and 'scRNA-seq data pre-processing' files respectively. These datasets are called upon in all following codes. 
 
 Given are the codes necessary to generate the data or graphs which are used to create the figures presented in the paper, arranged on the figure order. Note: some data further processed in Graphad or modified in Adobe Illustrator to generate graphs. For these figures, the code on how the data was generated to make these graphs is given.
 
