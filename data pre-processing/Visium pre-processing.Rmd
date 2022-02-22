@@ -1,0 +1,291 @@
+---
+title: "Visium pre-processing"
+author: "Daan Kloosterman"
+date: "12/28/2021"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Pre-processing scRNA-seq data
+
+This module contains the code used to integrate and filter the raw single cell expression data for further downstream processing. The raw single cell expression matrices can be downloaded from (...)
+
+# Loading packages/libraries required for the data pre-processing
+
+```{r}
+library(Seurat)
+library(nichenetr)
+library(readxl)
+```
+
+## Load each dataset seperatly using the Load10X_Spatial() function from the Seurat package
+
+```{r}
+setwd("~/...") # Set working directory to the raw data folder of the visium 10x data
+
+S1 <- Load10X_Spatial(
+  data.dir = paste(getwd(), "/S1", sep = ""),
+  filename = "filtered_feature_bc_matrix.h5",
+  assay = "Spatial",
+  slice = "slice1",
+  filter.matrix = TRUE,
+  to.upper = FALSE,
+  image = NULL,
+)
+
+S2 <- Load10X_Spatial(
+  data.dir = paste(getwd(), "/S2", sep = ""),
+  filename = "filtered_feature_bc_matrix.h5",
+  assay = "Spatial",
+  slice = "slice1",
+  filter.matrix = TRUE,
+  to.upper = FALSE,
+  image = NULL,
+)
+
+S3 <- Load10X_Spatial(
+  data.dir = paste(getwd(), "/S3", sep = ""),
+  filename = "filtered_feature_bc_matrix.h5",
+  assay = "Spatial",
+  slice = "slice1",
+  filter.matrix = TRUE,
+  to.upper = FALSE,
+  image = NULL,
+)
+
+S4 <- Load10X_Spatial(
+  data.dir = paste(getwd(), "/S4", sep = ""),
+  filename = "filtered_feature_bc_matrix.h5",
+  assay = "Spatial",
+  slice = "slice1",
+  filter.matrix = TRUE,
+  to.upper = FALSE,
+  image = NULL,
+)
+
+S5 <- Load10X_Spatial(
+  data.dir = paste(getwd(), "/S5", sep = ""),
+  filename = "filtered_feature_bc_matrix.h5",
+  assay = "Spatial",
+  slice = "slice1",
+  filter.matrix = TRUE,
+  to.upper = FALSE,
+  image = NULL,
+)
+
+S6 <- Load10X_Spatial(
+  data.dir = paste(getwd(), "/S6", sep = ""),
+  filename = "filtered_feature_bc_matrix.h5",
+  assay = "Spatial",
+  slice = "slice1",
+  filter.matrix = TRUE,
+  to.upper = FALSE,
+  image = NULL,
+)
+
+S7 <- Load10X_Spatial(
+  data.dir = paste(getwd(), "/S7", sep = ""),
+  filename = "filtered_feature_bc_matrix.h5",
+  assay = "Spatial",
+  slice = "slice1",
+  filter.matrix = TRUE,
+  to.upper = FALSE,
+  image = NULL,
+)
+
+S8 <- Load10X_Spatial(
+  data.dir = paste(getwd(), "/S8", sep = ""),
+  filename = "filtered_feature_bc_matrix.h5",
+  assay = "Spatial",
+  slice = "slice1",
+  filter.matrix = TRUE,
+  to.upper = FALSE,
+  image = NULL,
+)
+```
+
+## Merge data, annotate and normalise using the SCT transformation
+
+```{r}
+# Prepping all data for analysis
+S1$orig.ident <- c("S1")
+S2$orig.ident <- c("S2")
+S3$orig.ident <- c("S3")
+S4$orig.ident <- c("S4")
+S5$orig.ident <- c("S5")
+S6$orig.ident <- c("S6")
+S7$orig.ident <- c("S7")
+S8$orig.ident <- c("S8")
+
+gbm.merged <- merge(S1, c(S2, S3, S4, S5, S6, S7, S8))
+rm(S1, S2, S3, S4, S5, S6, S7, S8)
+
+# Add tumor information to each sample: Ink4a = PDG-Ink4a KO model, p53 = PDG-p53 KD model, Prim = Primary tumor, Rec = Recurrent tumor
+names(gbm.merged@images) <- c("Ink4a_Prim_S1", "Ink4a_Rec_S2", "Ink4a_Prim_S3", "Ink4a_Rec_S4", "Ink4a_Rec_S5", "P53_Prim_S6", "Ink4a_Prim_S7", "P53_Prim_S8")
+
+# Standard Seurat workflow which normalizes the dataset with an SCT transformation
+gbm.merged <- SCTransform(gbm.merged, assay = "Spatial", verbose = FALSE)
+gbm.merged <- ScaleData(gbm.merged, verbose = FALSE)
+gbm.merged <- FindVariableFeatures(gbm.merged, verbose = FALSE)
+gbm.merged <- RunPCA(gbm.merged, verbose = FALSE)
+gbm.merged <- RunUMAP(gbm.merged, reduction = "pca", dims = 1:10)
+gbm.merged <- FindNeighbors(gbm.merged, reduction = "pca", dims = 1:10)
+gbm.merged <- FindClusters(gbm.merged, resolution = 0.3, algorithm = 1)
+```
+
+
+## Assign pseudolocation to each spot using the IVY-Gap signatures of the four major niches of glioblastoma, the cellular tumor (CT), the cells surrounding pseudopalisading necrosis (PAN), the microvascular proliferation (MVP) and leading edge (LE) 
+
+```{r}
+setwd("~/...") # Set working directory to the unzipped github folder of the visium 10x data (https://github.com/djkloosterman/AkkariLab)
+source("unique functions/assignLocation.R")
+IVY_gap <- read_excel("signatures/IVY_Gap.xlsx")
+
+IVY_gap$Gene <- IVY_gap$NAME %>% convert_human_to_mouse_symbols() 
+IVY_gap <- IVY_gap[complete.cases(IVY_gap), ]
+
+ct.all <-  subset(IVY_gap$Gene, subset = IVY_gap$Assigned == "CT")
+pan.all <-  subset(IVY_gap$Gene, subset = IVY_gap$Assigned == "CTpan")
+le.all <-  subset(IVY_gap$Gene, subset = IVY_gap$Assigned == "LE")
+mvp.all <-  subset(IVY_gap$Gene, subset = IVY_gap$Assigned == "CTmvp")
+```
+
+
+## Using IVY GAP Scoring function and visualising it in a spatial plot
+It works especially well on SCT normalized data, increases overall gene expression meaning you will get less "Undecided" cells
+
+```{r}
+gbm.merged <- assignLocation(gbm.merged, ct.features = ct.all, pan.features = pan.all, le.features = le.all, mvp.features = mvp.all)
+Idents(gbm.merged) <- gbm.merged$Location
+
+SpatialDimPlot(gbm.merged, images = c("Ink4a_Prim_S1", "Ink4a_Rec_S2", "Ink4a_Prim_S3", "Ink4a_Rec_S4")) 
+SpatialDimPlot(gbm.merged, images = c( "Ink4a_Rec_S5", "P53_Prim_S6", "Ink4a_Prim_S7", "P53_Prim_S8")) 
+```
+
+## Calculate LLM score for each spot and classify cells as LLM enriched when score is higher than 0.1
+
+```{r}
+## LLM 18 gene signature
+Gene <- c("Arg1", "Gpnmb", "Lgals3", "Fabp5", "Lyz2", "Pf4", "Prdx1", "Fth1", "Pla2g7", "Acp5", "Lgals1", "Ninj1" , "Hmox1", "Igf1", "Mgst1", "Msrb1", "Plin2", "Spp1")
+
+##Add score to every cell and create new seurat object. Not necessary to create a new object but in case anything goes wrong your original data is still there.
+##This part is taken from the cellcycle classification, however I only used the part where Geneset scores were assigned to the cell
+##create a score for every group
+
+gbm.merged <- NormalizeData(gbm.merged) # Needs to be normalised 
+fdscores <- AddModuleScore(gbm.merged, features= list(c(Gene)), name="Gene",nbin=100)
+
+##define the different groups in your Genelist, add '1' to every groupname. Groupnames can be checked in the metadata -> str(fdscores@meta.data)
+groups <- c("Gene1")
+
+##load function to create density values
+densMode <- function(x){
+  td <- density(x)
+  tdx <- td$x
+  tdy <- td$y
+  minx <- tdx[which(diff(sign(diff(tdy)))==2)]
+  peakx <- tdx[which(diff(sign(diff(tdy)))==-2)]
+  return(list(minx=minx, maxy=peakx))
+}
+
+##For every group determine the thesholds and plot several plots
+for (i in groups){
+  ##create densityplots and set cut-offs
+  vl <- densMode(fdscores@meta.data[,i])[1]
+  vl2 <- densMode(fdscores@meta.data[,i])[2]
+  plot(density(fdscores@meta.data[,i]), main=paste("densityplot, GenesetScore, The higher the cell's score, the higher the Geneset's average expression ",i, sep=""))
+  if(density(fdscores@meta.data[,i])$y[which(density(fdscores@meta.data[,i])$x==vl$minx[1])] > 6 || density(fdscores@meta.data[,i])$y[which(density(fdscores@meta.data[,i])$x==vl$minx[1])] <0.01){
+    abline(v=vl$minx[2])
+    threshold=vl$minx[2]
+  }else{
+    abline(v=vl$minx[1], col="red")
+    threshold=vl$minx[1]
+  }
+  #plot(hist(fdscores@meta.data[,i], plot=F, freq=FALSE))
+  #abline(h=500)
+  #abline(v=vl2$maxy, col="red")
+  
+  ##classify the cells based on thresholds of 0.1
+  gbm.merged@meta.data[,paste("assignedto",i, sep="")] <- "nonclassified"
+  gbm.merged@meta.data[which(fdscores@meta.data[,i]>0.1),paste("assignedto",i, sep="")] <- paste("assignedto",i, sep=" ")
+  fdscores_llm <- fdscores
+}
+
+Idents(gbm.merged) <- gbm.merged@meta.data$assignedtoGene1
+new.cluster.ids <- c("low-LLM activity", "high-LLM activity")
+
+names(new.cluster.ids) <- levels(gbm.merged)
+gbm.merged <- RenameIdents(gbm.merged, new.cluster.ids)
+gbm.merged$LLM <- Idents(gbm.merged)
+```
+
+## Calculate MES score for each spot and classify cells as MES enriched when score is higher than 0.05
+
+```{r}
+Verhaak_Signatures <- read_excel("/signatures/Verhaak_Signatures.xlsx")
+Gene <- as.vector(Verhaak_Signatures$VERHAAK_GLIOBLASTOMA_MESENCHYMAL_MOUSE)
+# Gene <- c("Cd44", "S100a11", "Slc2a1", "Lgals3", "Mt2", "Igfbp7")
+##Add score to every cell and create new seurat object. Not necessary to create a new object but in case anything goes wrong your original data is still there.
+##This part is taken from the cellcycle classification, however I only used the part where Geneset scores were assigned to the cell
+##create a score for every group
+fdscores <- AddModuleScore(gbm.merged, features=list(c(Gene)), name="Gene",nbin=100)
+
+##define the different groups in your Genelist, add '1' to every groupname. Groupnames can be checked in the metadata -> str(fdscores@meta.data)
+groups <- c("Gene1")
+
+##load function to create density values
+densMode <- function(x){
+  td <- density(x)
+  tdx <- td$x
+  tdy <- td$y
+  minx <- tdx[which(diff(sign(diff(tdy)))==2)]
+  peakx <- tdx[which(diff(sign(diff(tdy)))==-2)]
+  return(list(minx=minx, maxy=peakx))
+}
+
+##For every group determine the thesholds and plot several plots
+for (i in groups){
+  ##create densityplots and set cut-offs
+  vl <- densMode(fdscores@meta.data[,i])[1]
+  vl2 <- densMode(fdscores@meta.data[,i])[2]
+  plot(density(fdscores@meta.data[,i]), main=paste("densityplot, GenesetScore, The higher the cell's score, the higher the Geneset's average expression ",i, sep=""))
+  if(density(fdscores@meta.data[,i])$y[which(density(fdscores@meta.data[,i])$x==vl$minx[1])] > 6 || density(fdscores@meta.data[,i])$y[which(density(fdscores@meta.data[,i])$x==vl$minx[1])] <0.01){
+    abline(v=vl$minx[2])
+    threshold=vl$minx[2]
+  }else{
+    abline(v=vl$minx[1], col="red")
+    threshold=vl$minx[1]
+  }
+  #plot(hist(fdscores@meta.data[,i], plot=F, freq=FALSE))
+  #abline(h=500)
+  #abline(v=vl2$maxy, col="red")
+  
+  ##classify the cells based on thresholds of 0.05
+  gbm.merged@meta.data[,paste("assignedto",i, sep="")] <- "nonclassified"
+  gbm.merged@meta.data[which(fdscores@meta.data[,i]>0.05),paste("assignedto",i, sep="")] <- paste("assignedto",i, sep=" ") ## Use 0.4 for MG
+  fdscores_mes <- fdscores
+}
+
+Idents(gbm.merged) <- gbm.merged@meta.data$assignedtoGene1
+new.cluster.ids <- c("Pro-Neural", "Mesenchymal")
+
+names(new.cluster.ids) <- levels(gbm.merged)
+gbm.merged <- RenameIdents(gbm.merged, new.cluster.ids)
+gbm.merged$subtype <- Idents(gbm.merged)
+```
+
+## Saving data for further downstream processing and analysis
+
+```{r}
+setwd("~/...") # Set working directory to folder where integrated and filtered data will be saved
+
+saveRDS(gbm.merged, file = "data/visium_merged_anno1.rds")
+```
+
+
+
